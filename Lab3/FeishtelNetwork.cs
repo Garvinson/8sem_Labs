@@ -5,8 +5,8 @@ namespace Lab3;
 
 public static class FeishtelNetwork
 {
-    private const string K1 = "0101";
-    private const string K2 = "1010";
+    private const int Key1 = 12345678;
+    private const int Key2 = 43;
     private const int CountRounds = 8;
     private const int CountBlocks = 4;
 
@@ -14,28 +14,33 @@ public static class FeishtelNetwork
 
     public static string Encode(string value)
     {
-        var blocks = new string[CountBlocks];
+        var blocks = new int[CountBlocks];
 
-        //Разделяем на блоки и переводим в биты
-        var subStringValue = CommonHelper.EncodeBinString(value,CountBitsInChar);
-        var lengthBlock = subStringValue.Length / CountBlocks;
-        for (var j = 0; j < CountBlocks; j++)
+        //Разделяем на блоки и переводим в биты и дополняем массив пустыми значениями до кратности 4
+        var valueByteList = Encoding.ASCII.GetBytes(value).ToList();
+        while (valueByteList.Count % CountBlocks != 0)
         {
-            blocks[j] = subStringValue[..lengthBlock];
-            subStringValue = subStringValue.Substring(lengthBlock, subStringValue.Length - lengthBlock);
+            valueByteList.Add(0);
         }
-        
+
+        var lengthBlock = valueByteList.Count / CountBlocks;
+
+        for (int i = 0; i < blocks.Length; i++)
+        {
+            blocks[i] = BitConverter.ToInt32(valueByteList.GetRange(i * lengthBlock, lengthBlock).ToArray());
+        }
+
         for (var i = 0; i < CountRounds; i++)
         {
-            var v = LogicalAddition(ShiftLeft(K1,i), ShiftRight(K2,i));
-            var function = LogicalAddition(blocks[0], v);
+            var v = rotl(Key1, i) ^ rotr(Key2, i);
+            var function = LogicalAdditionByScalar(blocks[0], v);
             
-            var blocksAfterOneRound = new string[CountBlocks];
+            var blocksAfterOneRound = new int[CountBlocks];
             for (var j = 0; j < CountBlocks; j++)
             {
                 blocksAfterOneRound[j] = j switch
                 {
-                    0 => LogicalAddition(blocks[j + 1], function),
+                    0 => LogicalAdditionByScalar(blocks[j + 1], function),
                     CountBlocks - 1 => blocks[0],
                     _ => blocks[j + 1]
                 };
@@ -46,69 +51,74 @@ public static class FeishtelNetwork
         var encodeValue = new StringBuilder();
         foreach (var block in blocks)
         {
-            encodeValue.Append(block);
+            encodeValue.Append(Encoding.ASCII.GetString(BitConverter.GetBytes(block)));
+        }
+        
+        return encodeValue.ToString();
+    }
+    
+    public static string Decode(string value)
+    {
+        var blocks = new int[CountBlocks];
+
+        //Разделяем на блоки и переводим в биты и дополняем массив пустыми значениями до кратности 4
+        var valueByteList = Encoding.ASCII.GetBytes(value).ToList();
+        while (valueByteList.Count % CountBlocks != 0)
+        {
+            valueByteList.Add(0);
+        }
+
+        var lengthBlock = valueByteList.Count / CountBlocks;
+
+        for (int i = 0; i < blocks.Length; i++)
+        {
+            blocks[i] = BitConverter.ToInt32(valueByteList.GetRange(i * lengthBlock, lengthBlock).ToArray());
+        }
+
+        for (var i = CountRounds-1; i >= 0; i--)
+        {
+            var v = rotl(Key1, i) ^ rotr(Key2,i);
+            var function = LogicalAdditionByScalar(blocks[0], v);
+            
+            var blocksAfterOneRound = new int[CountBlocks];
+            for (var j = 0; j < CountBlocks; j++)
+            {
+                blocksAfterOneRound[j] = j switch
+                {
+                    0 => blocks[CountBlocks-1],
+                    1 => LogicalAdditionByScalar(blocks[j + 1], function),
+                    _ => blocks[j - 1]
+                };
+            }
+            blocks = blocksAfterOneRound;
+        }
+
+        var encodeValue = new StringBuilder();
+        foreach (var block in blocks)
+        {
+            encodeValue.Append(Encoding.ASCII.GetString(BitConverter.GetBytes(block)));
         }
         
         return encodeValue.ToString();
     }
 
-    private static string ShiftRight(string value, int count)
+    private static int LogicalAdditionByScalar(int value1, int value2)
     {
-        var shiftValue = value;
-        for (var i = 0; i < count; i++)
-        {
-            var bit = shiftValue.Substring(shiftValue.Length - 1, 1);
-            shiftValue = shiftValue.Substring(0, shiftValue.Length-1);
-            shiftValue = $"{bit}{shiftValue}";
-        }
-
-        return shiftValue;
-    }
-    
-    private static string ShiftLeft(string value, int count)
-    {
-        var shiftValue = value;
-        for (var i = 0; i < count; i++)
-        {
-            var bit = shiftValue[..1];
-            shiftValue = shiftValue.Substring(1, shiftValue.Length-1);
-            shiftValue = $"{shiftValue}{bit}";
-        }
-
-        return shiftValue;
+        return value1 ^ value2;
     }
 
-    private static string LogicalAddition(string value1, string value2)
+    static int rotr(this int value, int bits)
     {
-        if (value1.Length < value2.Length)
-        {
-            while (value1.Length != value2.Length)
-            {
-                value1 = $"0{value1}";
-            }
-        }
-        else
-        {
-            while (value2.Length != value1.Length)
-            {
-                value2 = $"0{value2}";
-            }
-        }
-        
-        var additionValue = new StringBuilder();
-        for (var i = 0; i < value2.Length; i++)
-        {
-            if (value1[i] == '0' && value2[i] == '0')
-            {
-                additionValue.Append('0');
-            }
-            else
-            {
-                additionValue.Append('1');
-            }
-        }
-        
-        return additionValue.ToString()!;
+        bits %= 32;
+        var res = Convert.ToString((value >> bits) | (value << (32 - bits)), 2).PadLeft(32, '0');
+        return Convert.ToInt32( res.Substring(res.Length - 32, 32),2);
+    }
+ 
+    static int rotl(this int value, int bits)
+    {
+        bits %= 32;
+        var res = Convert.ToString((value << bits) | (value >> (32 - bits)), 2).PadLeft(32,'0');
+        return Convert.ToInt32( res.Substring(res.Length - 32, 32), 2);
     }
 
 

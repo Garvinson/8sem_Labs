@@ -58,6 +58,7 @@ while (inputCommand != 0)
             var strEncode = FeishtelNetwork.Encode(str);
             
             Console.WriteLine($"Зашифрованая строка: {strEncode}");
+            Console.WriteLine($"Дешифрованная строка: {FeishtelNetwork.Decode(strEncode)}");
             break;
         }
         case 8:
